@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	err := createFile("../files/createFile.text", []byte("I am writting to the file for the first time"))
+	err := createFile("../files/createFile.text", []byte("I am writting to the file for the first time and would it work ? "))
 	if err != nil {
 		fmt.Printf("%#v", err.Error())
 	}
