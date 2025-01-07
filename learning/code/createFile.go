@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-func main() {
+func solution() {
 	err := createFile("../files/createFile.text", []byte("I am writting to the file for the first time and would it work ? "))
 	if err != nil {
 		fmt.Printf("%#v", err.Error())
@@ -17,6 +17,7 @@ func createFile(path string, data []byte) error {
 	if err != nil {
 		return err
 	}
+	defer fp.Close()
 	_, err = fp.Write(data)
 	if err != nil {
 		return err
