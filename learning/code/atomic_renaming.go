@@ -33,7 +33,7 @@ func append(path string, data []byte) error {
 	return nil
 }
 
-func main() {
+func solution2() {
 	err := append("../files/createFile.text", []byte("everything changed to the new content"))
 	if err != nil {
 		fmt.Println(err.Error())
