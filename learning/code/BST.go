@@ -88,7 +88,7 @@ func (n *Node) delete(key int) {
 	}
 }
 
-func main() {
+func bst() {
 	bst := &Node{key: 10}
 	bst.insert(20)
 	bst.insert(5)
