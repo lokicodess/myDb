@@ -1,8 +1,6 @@
 /*
 IMPLEMENTING THE BINARY SEARCH TREE
   - insert
-  - Delete
-  - Search
 */
 package main
 
