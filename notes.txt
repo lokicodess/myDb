@@ -1,0 +1,7 @@
+
+position of the key and value is dependent upon the offset we are storing  
+
+lets say i have got the offset .. then the actual value will be after the 2*nkeys ( skipping ) + offset  value lets say 10 --> i will reach the starting byte of the [keylen, valLen, actual key, actual value].. so now if i do + 4bytes ( skipping the len part ) then i wll get the actual value 
+
+
+ internal nodes store keys and pointers to child nodes
