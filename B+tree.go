@@ -85,7 +85,7 @@ func (node BNode) getVal(idx uint16) []byte
 
 // node size
 func (node BNode) nbytes() uint16 {
-	return node.kvPos(nodGe.nkeys()) // n is nth index
+	return node.kvPos(node.nkeys()) // n is nth index
 }
 
 // @nodeLookupLE finds the key in the current node
@@ -143,4 +143,60 @@ func nodeReplaceKidN(
 		nodeAppendKV(new, idx+uint16(i), tree.new(node), node.getKey(0), nil)
 	}
 	nodeAppendRange(new, old, idx+inc, idx+1, old.nkeys()-(idx+1))
+}
+
+// SPLIT FUNCTIONS
+
+func nodeSplit2(left BNode, right BNode, old BNode) {
+}
+
+func nodeSplit3(old BNode) (uint16, [3]BNode) {
+	if old.nbytes() <= BTREE_PAGE_SIZE {
+		old = old[:BTREE_PAGE_SIZE]
+		return 1, [3]BNode{old}
+	}
+	left := BNode(make([]byte, 2*BTREE_PAGE_SIZE))
+	right := BNode(make([]byte, 2*BTREE_PAGE_SIZE))
+	nodeSplit2(left, right, old)
+	if left.nbytes() <= BTREE_PAGE_SIZE {
+		left = left[:BTREE_PAGE_SIZE]
+		return 2, [3]BNode{left, right} // 2 nodes
+	}
+	// After splitting its still > 4KB
+	leftleft := BNode(make([]byte, BTREE_PAGE_SIZE)) // splitting left more
+	middle := BNode(make([]byte, BTREE_PAGE_SIZE))
+	nodeSplit2(leftleft, middle, left)
+	utils.Assert(leftleft.nbytes() <= BTREE_PAGE_SIZE, "nodeSplit3: leftleft.nbytes smaller than node size")
+	return 3, [3]BNode{leftleft, middle, right}
+}
+
+// B+Tree insertion
+
+func treeInsert(tree *BTree, node BNode, key []byte, val []byte) BNode {
+	new := BNode{data: make([]byte, 2*BTREE_PAGE_SIZE)}
+	idx := nodeLookupLE(node, key)
+	switch node.btype() {
+	case BNODE_LEAF:
+		if bytes.Equal(key, node.getKey(idx)) {
+			leafUpdate(new, node, idx, key, val)
+		} else {
+			leafInsert(new, node, idx+1, key, val)
+		}
+	case BNODE_NODE:
+		nodeInsert(tree, new, node, idx, key, val)
+	default:
+		panic("bad node!")
+
+	}
+	return new
+}
+
+func nodeInsert(
+	tree *BTree, new BNode, node BNode, idx uint16, key []byte, val []byte,
+) {
+	kptr := node.getPtr(idx)
+	knode := treeInsert(tree, tree.get(kptr), key, val)
+	nsplit, split := nodeSplit3(knode)
+	tree.del(kptr)
+	nodeReplaceKidN(tree, new, node, idx, split[:nsplit]...)
 }
