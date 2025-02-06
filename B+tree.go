@@ -29,7 +29,7 @@ type BTree struct {
 // Endianess meaning storing bytes in the sequence/order in the memory
 // binary.LittleEndian.Uint16 only reads the 2 bytes
 func (node BNode) btype() uint16 {
-	return binary.LittleEndian.Uint16(node[0:4])
+	return binary.LittleEndian.Uint16(node[0:3])
 }
 
 func (node BNode) nkeys() uint16 {
@@ -173,7 +173,7 @@ func nodeSplit3(old BNode) (uint16, [3]BNode) {
 // B+Tree insertion
 
 func treeInsert(tree *BTree, node BNode, key []byte, val []byte) BNode {
-	new := BNode{data: make([]byte, 2*BTREE_PAGE_SIZE)}
+	new := make(BNode, 2*BTREE_PAGE_SIZE)
 	idx := nodeLookupLE(node, key)
 	switch node.btype() {
 	case BNODE_LEAF:
@@ -195,8 +195,107 @@ func nodeInsert(
 	tree *BTree, new BNode, node BNode, idx uint16, key []byte, val []byte,
 ) {
 	kptr := node.getPtr(idx)
-	knode := treeInsert(tree, tree.get(kptr), key, val)
+	knode := treeInsert(tree, tree.get(kptr), key, val) // child node
 	nsplit, split := nodeSplit3(knode)
-	tree.del(kptr)
+	tree.del(kptr) // removing refrence
 	nodeReplaceKidN(tree, new, node, idx, split[:nsplit]...)
+}
+
+func leafUpdate(
+	new BNode, old BNode, idx uint16,
+	key []byte, val []byte,
+) {
+	// maybe temporarly storing n + 1 keys instead of n/2
+	// it will help in redistribution
+	new.setHeader(BNODE_LEAF, old.nkeys()+1)
+	nodeAppendRange(new, old, 0, 0, idx)
+	nodeAppendKV(new, idx, 0, key, val)
+	nodeAppendRange(new, old, idx+1, idx, old.nkeys()-idx)
+}
+
+func (tree *BTree) Insert(key []byte, val []byte) {
+	if tree.root == 0 {
+		// create the first node
+		root := make(BNode, BTREE_PAGE_SIZE)
+		root.setHeader(BNODE_LEAF, 2)
+		nodeAppendKV(root, 0, 0, nil, nil)
+		nodeAppendKV(root, 1, 0, key, val)
+		tree.root = tree.new(root)
+		return
+	}
+
+	node := treeInsert(tree, tree.get(tree.root), key, val)
+	nsplit, split := nodeSplit3(node)
+	tree.del(tree.root)
+	if nsplit > 1 {
+		// the root was split, add a new level
+		root := make(BNode, BTREE_PAGE_SIZE)
+		root.setHeader(BNODE_NODE, nsplit)
+		for i, knode := range split[:nsplit] {
+			ptr, key := tree.new(knode), knode.getKey(0)
+			nodeAppendKV(root, uint16(i), ptr, key, nil)
+		}
+		tree.root = tree.new(root)
+	} else {
+		tree.root = tree.new(split[0])
+	}
+}
+func (tree *BTree) Delete(key []byte)
+
+func leafDelete(new BNode, old BNode, idx uint16)
+func nodeMerge(new BNode, left BNode, right BNode)
+func nodeReplace2Kid(
+	new BNode, old BNode, idx uint16, ptr uint64, key []byte,
+)
+func shouldMerge(tree *BTree, node BNode, idx uint16, updated BNode) (int, BNode) {
+	if updated.nbytes() > BTREE_PAGE_SIZE/4 {
+		return 0, BNode{}
+	}
+
+	if idx > 0 {
+		sibling := BNode(tree.get(node.getPtr(idx - 1)))
+		merged := sibling.nbytes() + updated.nbytes() - HEADER
+		if merged <= BTREE_PAGE_SIZE {
+			return -1, sibling // left
+		}
+	}
+	if idx+1 < node.nkeys() {
+		sibling := BNode(tree.get(node.getPtr(idx + 1)))
+		merged := sibling.nbytes() + updated.nbytes() - HEADER
+		if merged <= BTREE_PAGE_SIZE {
+			return +1, sibling // right
+		}
+	}
+	return 0, BNode{}
+}
+
+func treeDelete(tree *BTree, node BNode, key []byte) BNode
+
+func nodeDelete(tree *BTree, node BNode, idx uint16, key []byte) BNode {
+	kptr := node.getPtr(idx)
+	updated := treeDelete(tree, tree.get(kptr), key)
+	if len(updated) == 0 {
+		return BNode{}
+	}
+	tree.del(kptr)
+	new := make(BNode, BTREE_PAGE_SIZE)
+	mergeDir, sibling := shouldMerge(tree, node, idx, updated)
+	switch {
+	case mergeDir < 0:
+		merged := make(BNode, BTREE_PAGE_SIZE)
+		nodeMerge(merged, sibling, updated)
+		tree.del(node.getPtr(idx - 1))
+		nodeReplace2Kid(new, node, idx-1, tree.new(merged), merged.getKey(0))
+	case mergeDir > 0:
+		merged := make(BNode, BTREE_PAGE_SIZE)
+		nodeMerge(merged, updated, sibling)
+		tree.del(node.getPtr(idx + 1))
+		nodeReplace2Kid(new, node, idx, tree.new(merged), merged.getKey(0))
+	case mergeDir == 0 && updated.nkeys() == 0:
+		utils.Assert(node.nkeys() == 1, "nodeDelete: node.nkeys() != 1")
+		new.setHeader(BNODE_NODE, 0)
+	case mergeDir == 0 && updated.nkeys() > 0:
+		nodeReplaceKidN(tree, new, node, idx, updated)
+	}
+	return new
 }
